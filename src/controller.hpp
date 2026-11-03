@@ -116,6 +116,12 @@ namespace drachtio {
     void handleSigTerm( int signal ) ;
     void handleSigPipe( int signal ) ;
   	void run() ;
+
+    // embedded in another process (see embed.h): no admin port, errors throw
+    // instead of exiting, and onReady runs on the sofia thread right before
+    // its event loop starts
+    static void setEmbedded( std::function<void()> onReady ) ;
+    static bool isEmbedded(void) { return s_bEmbedded; }
   	src::severity_logger_mt<severity_levels>& getLogger() const { return *m_logger; }
     src::severity_logger_mt< severity_levels >* createLogger() ;
   
@@ -212,6 +218,9 @@ namespace drachtio {
     unsigned int getTportMaxConsecutiveTimeouts() { return m_tportMaxConsecutiveTimeouts; }
 
 	private:
+
+    static bool s_bEmbedded ;
+    static std::function<void()> s_onReady ;
 
   	DrachtioController() ;
 

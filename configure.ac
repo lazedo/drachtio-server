@@ -48,9 +48,20 @@ if test x$asan = xtrue && test x$tcmalloc = xtrue; then
   AC_MSG_ERROR([--enable-asan and --enable-tcmalloc are mutually exclusive (both intercept malloc)])
 fi
 
+# optional libdrachtio, to run drachtio-server inside another process (src/embed.h)
+AC_ARG_ENABLE([embed],
+[  --enable-embed       Also build libdrachtio, a shared library for embedding (see EMBED.md)],
+[case "${enableval}" in
+  yes) embed=true ;;
+  no)  embed=false ;;
+  *) AC_MSG_ERROR([bad value ${enableval} for --enable-embed]) ;;
+esac],[embed=false])
+AM_CONDITIONAL([EMBED], [test x$embed = xtrue])
+
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
+LT_INIT([disable-static])
 
 LIBCURL_CHECK_CONFIG
 

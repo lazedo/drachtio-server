@@ -288,6 +288,14 @@ namespace drachtio {
         }
     }
  
+    bool DrachtioController::s_bEmbedded = false ;
+    std::function<void()> DrachtioController::s_onReady ;
+
+    void DrachtioController::setEmbedded( std::function<void()> onReady ) {
+        s_bEmbedded = true ;
+        s_onReady = onReady ;
+    }
+
     DrachtioController::DrachtioController( int argc, char* argv[] ) : m_bDaemonize(false), m_bLoggingInitialized(false),
         m_configFilename(DEFAULT_CONFIG_FILENAME), m_adminTcpPort(0), m_adminTlsPort(0), m_bNoConfig(false), 
         m_current_severity_threshold(log_none), m_nSofiaLoglevel(-1), m_bIsOutbound(false), m_bConsoleLogging(false),
@@ -301,6 +309,7 @@ namespace drachtio {
 
         // command line arguments, if provided, override env vars
         if( !parseCmdArgs( argc, argv ) ) {
+            if (s_bEmbedded) throw std::runtime_error("invalid arguments") ;
             usage() ;
             exit(-1) ;
         }
@@ -309,6 +318,7 @@ namespace drachtio {
         m_Config = std::make_shared<DrachtioConfig>( m_configFilename.c_str(), m_bDaemonize ) ;
 
         if( !m_Config->isValid() ) {
+            if (s_bEmbedded) throw std::runtime_error("invalid configuration file: " + m_configFilename) ;
             exit(-1) ;
         }
         this->installConfig() ;
@@ -1199,7 +1209,11 @@ namespace drachtio {
             }
         }
 
-        if (adminTcpPort && !adminTlsPort) {
+        if (s_bEmbedded) {
+            DR_LOG(log_notice) << "DrachtioController::run embedded: no admin port, the host process is the client";
+            m_pClientController.reset(new ClientController(this));
+        }
+        else if (adminTcpPort && !adminTlsPort) {
             DR_LOG(log_notice) << "DrachtioController::run listening for applications on tcp port " << adminTcpPort << " only";
             m_pClientController.reset(new ClientController(this, adminAddress, adminTcpPort));
         }
@@ -1328,7 +1342,8 @@ namespace drachtio {
             DR_LOG(log_error) << "Error calling su_init: " << rv ;
             return ;
         }
-        ::atexit(su_deinit);
+        // a host process exits with this thread still running
+        if (!s_bEmbedded) ::atexit(su_deinit);
         if (sip_update_default_mclass(sip_extend_mclass(NULL)) < 0) {
             DR_LOG(log_error) << "DrachtioController::run: Error calling sip_update_default_mclass"  ;
             return  ;
@@ -1461,6 +1476,8 @@ namespace drachtio {
 
         Sighup::start(m_root, m_nta) ;
  
+        if (s_bEmbedded && s_onReady) s_onReady() ;
+
         su_root_run( m_root ) ;
         DR_LOG(log_notice) << "Sofia event loop ended"  ;
         

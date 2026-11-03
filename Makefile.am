@@ -5,16 +5,21 @@ MYVERSION=$(shell git describe --always 2>/dev/null || echo 1.0.0)
 AM_LDFLAGS= -L/usr/local/lib -L${srcdir}/deps/prometheus-cpp/build/lib
 LDADD= -lboost_thread
 
+# an embedding build (--enable-embed) makes only libdrachtio
+if !EMBED
 bin_PROGRAMS= drachtio
+endif
 
 ACLOCAL_AMFLAGS = -I m4
 
-drachtio_SOURCES= src/main.cpp src/controller.cpp src/drachtio-config.cpp \
+DRACHTIO_CORE_SOURCES= src/controller.cpp src/drachtio-config.cpp \
 	src/client-controller.cpp src/client.cpp src/drachtio.cpp src/sip-dialog.cpp \
 	src/sip-dialog-controller.cpp src/sip-proxy-controller.cpp src/pending-request-controller.cpp \
 	src/timer-queue.cpp src/cdr.cpp src/timer-queue-manager.cpp src/sip-transports.cpp \
 	src/request-handler.cpp src/request-router.cpp src/stats-collector.cpp \
 	src/invite-in-progress.cpp src/blacklist.cpp src/ua-invalid.cpp src/sighup.cpp
+
+drachtio_SOURCES= src/main.cpp $(DRACHTIO_CORE_SOURCES)
 
 drachtio_CPPFLAGS= -I${srcdir}/deps/sofia-sip/libsofia-sip-ua/su -I${srcdir}/deps/sofia-sip/libsofia-sip-ua/nta \
  -I${srcdir}/deps/sofia-sip/libsofia-sip-ua/sip -I${srcdir}/deps/sofia-sip/libsofia-sip-ua/msg \
@@ -64,6 +69,24 @@ AM_LDFLAGS += $(ASAN_FLAGS)
 drachtio_CPPFLAGS += -O1
 endif
 
+if EMBED
+# libdrachtio: drachtio-server as a shared library, for a host process that
+# runs it (src/embed.h, EMBED.md). sofia-sip (LGPL) is linked as a shared
+# library, installed in $(libdir) beforehand; the other deps are static (PIC).
+lib_LTLIBRARIES= libdrachtio.la
+libdrachtio_la_SOURCES= $(DRACHTIO_CORE_SOURCES) src/embed.cpp src/embed-client.cpp
+libdrachtio_la_CPPFLAGS= $(drachtio_CPPFLAGS)
+libdrachtio_la_LDFLAGS= -version-info 0:0:0 -no-undefined -Wl,-rpath,$(libdir)
+libdrachtio_la_LIBADD= -L$(libdir) -lsofia-sip-ua \
+	${srcdir}/deps/jansson/src/.libs/libjansson.a \
+	${srcdir}/deps/hiredis/libhiredis.a \
+	${srcdir}/deps/prometheus-cpp/build/lib/libprometheus-cpp-pull.a \
+	${srcdir}/deps/prometheus-cpp/build/lib/libprometheus-cpp-core.a \
+	-lcurl -lssl -lcrypto -lz \
+	-lboost_thread -lboost_system -lboost_log -lboost_filesystem -lrt -lpthread
+pkginclude_HEADERS= src/embed.h
+endif
+
 BUILT_SOURCES=${srcdir}/deps/sofia-sip/libsofia-sip-ua/.libs/libsofia-sip-ua.a \
 	${srcdir}/deps/jansson/src/.libs/libjansson.a ${srcdir}/deps/prometheus-cpp/build/lib/libprometheus-cpp-core.a
 
@@ -91,15 +114,19 @@ clean-local:
 	rm -f $(TEST_PROGS)
 
 ${srcdir}/deps/sofia-sip/libsofia-sip-ua/.libs/libsofia-sip-ua.a:
-	cd ${srcdir}/deps/sofia-sip && ./bootstrap.sh && ./configure CFLAGS="$(CFLAGS) $(ASAN_FLAGS)" CXXFLAGS="$(CXXFLAGS) $(ASAN_FLAGS)" LDFLAGS="$(LDFLAGS) $(ASAN_FLAGS)" --with-glib=no && $(MAKE)
+	cd ${srcdir}/deps/sofia-sip && ./bootstrap.sh && ./configure CFLAGS="$(CFLAGS) $(ASAN_FLAGS)" CXXFLAGS="$(CXXFLAGS) $(ASAN_FLAGS)" LDFLAGS="$(LDFLAGS) $(ASAN_FLAGS)" --with-glib=no --with-pic --prefix=$(prefix) && $(MAKE)
 
+# the static deps are built position-independent, so libdrachtio can link them;
+# CMAKE_POLICY_VERSION_MINIMUM lets CMake 4 build their older CMakeLists
 ${srcdir}/deps/jansson/src/.libs/libjansson.a:
-	cd ${srcdir}/deps/jansson && autoreconf -fi && ./configure && $(MAKE)
+	cd ${srcdir}/deps/jansson && autoreconf -fi && ./configure --with-pic && $(MAKE)
 
 ${srcdir}/deps/prometheus-cpp/build/lib/libprometheus-cpp-core.a ${srcdir}/deps/prometheus-cpp/build/lib/libprometheus-cpp-pull.a:
 	cd ${srcdir}/deps/prometheus-cpp && mkdir -p build && cd build  && \
-	cmake .. -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_PREFIX=`pwd` && \
+	cmake .. -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+		-DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_PREFIX=`pwd` && \
 	$(MAKE) && make install
 
 ${srcdir}/deps/hiredis/libhiredis.a:
-	cd ${srcdir}/deps/hiredis && cmake -DBUILD_SHARED_LIBS=OFF -DENABLE_SSL=ON . && $(MAKE)
+	cd ${srcdir}/deps/hiredis && cmake -DBUILD_SHARED_LIBS=OFF -DENABLE_SSL=ON \
+		-DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 . && $(MAKE)

@@ -65,6 +65,17 @@ namespace drachtio {
         DR_LOG(log_debug) << "ClientController::ClientController done setting tls options: ";
     }
 
+    // embedded: the acceptors are never opened
+    ClientController::ClientController( DrachtioController* pController ) :
+        m_pController( pController ),
+        m_acceptor_tcp(m_ioservice),
+        m_acceptor_tls(m_ioservice),
+        m_tcpPort(0), m_tlsPort(0) {
+
+        m_context = makeTlsContext();
+        DR_LOG(log_debug) << "Client controller initializing without an admin port (embedded)" ;
+    }
+
     // throws boost::system::system_error if a file cannot be loaded or the key does not match the certificate
     std::shared_ptr<boost::asio::ssl::context> ClientController::makeTlsContext() {
         auto context = std::make_shared<boost::asio::ssl::context>(boost::asio::ssl::context::sslv23);
@@ -700,8 +711,9 @@ namespace drachtio {
     }
 
     void ClientController::stop() {
-        m_acceptor_tcp.cancel() ;
-        m_acceptor_tls.cancel() ;
+        boost::system::error_code ec ;   // an acceptor that never opened (embedded) cannot cancel
+        m_acceptor_tcp.cancel(ec) ;
+        m_acceptor_tls.cancel(ec) ;
         m_ioservice.stop() ;
         m_thread.join() ;
     }

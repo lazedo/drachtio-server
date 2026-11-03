@@ -58,6 +58,9 @@ namespace drachtio {
     ClientController( DrachtioController* pController, string& address, unsigned int tcpPort, unsigned int tlsPort, 
       const string& chainFile, const string& certFile, const string& keyFile, const string& dhFile ) ;
     
+    // embedded (see embed.h): no admin port; the host joins as a client
+    explicit ClientController( DrachtioController* pController ) ;
+
     ~ClientController() ;
     
     void start();
