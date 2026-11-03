@@ -1799,9 +1799,14 @@ namespace drachtio {
                  
                  BYE is an exception, because we clear the dialog when we receive the BYE (not when we send the 200 OK)
                  and as a result if we added it below we would immediately delete the irq and generate a 500 before
-                 the client had a chance to respond.
+                 the client had a chance to respond. A NOTIFY that terminates a subscription clears the dialog the
+                 same way, so it is an exception too.
                  */
-                if (sip_method_bye != sip->sip_request->rq_method) {
+                bool isFinalNotify = sip_method_notify == sip->sip_request->rq_method && !dlg->isInviteDialog() &&
+                    NULL != sip->sip_subscription_state &&
+                    NULL != sip->sip_subscription_state->ss_substate &&
+                    NULL != strstr(sip->sip_subscription_state->ss_substate, "terminated");
+                if (sip_method_bye != sip->sip_request->rq_method && !isFinalNotify) {
                   dlg->addIncomingRequestTransaction(transactionId);
                 }
 
@@ -1911,8 +1916,8 @@ namespace drachtio {
                         findAndRemoveTransactionIdForIncomingRequest( transactionId );
                         nta_incoming_destroy( irq );
                     }
-                    else if( sip_method_bye == sip->sip_request->rq_method ) {
-                        // Schedule cleanup in case client never responds to BYE
+                    else {
+                        // Schedule cleanup in case client never responds to the BYE or final NOTIFY
                         m_pTQM->addTimer("general-sip",
                             std::bind(&SipDialogController::timeoutBye, this, transactionId), NULL, 32000);
                     }

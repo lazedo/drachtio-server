@@ -38,3 +38,13 @@ cd ../.. && ./autogen.sh && ./configure --prefix=$PREFIX --enable-embed && make 
 
 This installs `$PREFIX/lib/libdrachtio.so` and `$PREFIX/include/drachtio/embed.h`.
 With `--enable-embed` the `drachtio` program is not built.
+
+## Fixes
+
+These change drachtio-server for every client, embedded or not:
+
+- A NOTIFY that terminates a subscription clears its dialog when it arrives,
+  as a BYE does. Like the BYE, it is no longer kept among the dialog's
+  pending requests, which drachtio-server answers with 500 when the dialog
+  goes; the client answers it, and a timer cleans it up after 32 s if the
+  client never does.
