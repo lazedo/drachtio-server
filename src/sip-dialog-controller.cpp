@@ -882,6 +882,14 @@ namespace drachtio {
         if( sip->sip_cseq->cs_method == sip_method_invite || sip->sip_cseq->cs_method == sip_method_subscribe ) {
             std:shared_ptr<IIP> iip;
 
+            // a 2xx from another branch than the one that made the dialog (forking): it is no
+            // retransmission, it gets its own ACK and a BYE
+            if (sip->sip_cseq->cs_method == sip_method_invite && isForkedResponse(sip)) {
+                ackAndByeForkedResponse(sip);
+                msg_destroy( msg ) ;
+                return 0;
+            }
+
             //check for retransmission 
             if (sip->sip_cseq->cs_method == sip_method_invite && m_timerDHandler.resendIfNeeded(orq)) {
                 DR_LOG(log_info) << "SipDialogController::processResponseOutsideDialog - retransmitted ACK for callid: " << sip->sip_call_id->i_id  <<
@@ -2535,6 +2543,64 @@ namespace drachtio {
             }
         }
     }
+    // a 2xx to an INVITE we sent whose To tag differs from the 2xx that made the dialog
+    bool SipDialogController::isForkedResponse( sip_t const* sip ) {
+        if( sip->sip_status->st_status < 200 || sip->sip_status->st_status >= 300 ||
+            !sip->sip_from || !sip->sip_from->a_tag || !sip->sip_to || !sip->sip_to->a_tag ) {
+            return false ;
+        }
+        std::shared_ptr<SipDialog> dlg ;
+        string dialogId = string( sip->sip_call_id->i_id ) + ";from-tag=" + sip->sip_from->a_tag ;
+        if( !findDialogById( dialogId, dlg ) || dlg->getSipStatus() < 200 || dlg->getSipStatus() >= 300 ) {
+            return false ;
+        }
+        const char* rtag = nta_leg_get_rtag( dlg->getNtaLeg() ) ;
+        return rtag && 0 != strcmp( rtag, sip->sip_to->a_tag ) ;
+    }
+
+    // RFC 3261 13.2.2.4: the 2xx of another branch is acknowledged and its dialog ended with a BYE.
+    // The client only knows the dialog of the first 2xx. A retransmitted 2xx is acknowledged again.
+    void SipDialogController::ackAndByeForkedResponse( sip_t const* sip ) {
+        string branch = string( sip->sip_call_id->i_id ) + ";from-tag=" + sip->sip_from->a_tag +
+            ";to-tag=" + sip->sip_to->a_tag ;
+        bool first = addForkedBranch( branch ) ;
+
+        nta_leg_t* leg = nta_leg_tcreate( m_agent, NULL, NULL,
+            SIPTAG_CALL_ID( sip->sip_call_id ),
+            SIPTAG_FROM( sip->sip_from ),
+            SIPTAG_TO( sip->sip_to ),
+            TAG_END() ) ;
+        if( !leg ) {
+            DR_LOG(log_error) << "SipDialogController::ackAndByeForkedResponse - unable to create leg for " << branch ;
+            return ;
+        }
+        nta_leg_client_route( leg, sip->sip_record_route, sip->sip_contact ) ;
+
+        char cseq[32] ;
+        snprintf( cseq, sizeof(cseq), "%u ACK", sip->sip_cseq->cs_seq ) ;
+        nta_outgoing_t* ack = nta_outgoing_tcreate( leg, NULL, NULL, NULL, SIP_METHOD_ACK, NULL,
+            SIPTAG_CSEQ_STR( cseq ),
+            TAG_END() ) ;
+        if( ack ) nta_outgoing_destroy( ack ) ;
+
+        if( first ) {
+            DR_LOG(log_info) << "SipDialogController::ackAndByeForkedResponse - ending forked branch " << branch ;
+            snprintf( cseq, sizeof(cseq), "%u BYE", sip->sip_cseq->cs_seq + 1 ) ;
+            nta_outgoing_t* bye = nta_outgoing_tcreate( leg, NULL, NULL, NULL, SIP_METHOD_BYE, NULL,
+                SIPTAG_CSEQ_STR( cseq ),
+                SIPTAG_REASON_STR( "SIP ;cause=200 ;text=\"forked 2xx\"" ),
+                TAG_END() ) ;
+            if( bye ) nta_outgoing_destroy( bye ) ;
+            m_pTQM->addTimer( "general-sip", std::bind( &SipDialogController::forgetForkedBranch, this, branch ), NULL, 32000 ) ;
+        }
+
+        // the requests are complete: they keep no reference to the leg
+        nta_leg_destroy( leg ) ;
+    }
+    void SipDialogController::forgetForkedBranch( string branch ) {
+        removeForkedBranch( branch ) ;
+    }
+
     void SipDialogController::timeoutBye(string transactionId) {
         nta_incoming_t* irq = findAndRemoveTransactionIdForIncomingRequest(transactionId);
         if (irq) {

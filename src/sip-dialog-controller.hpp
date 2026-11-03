@@ -197,6 +197,11 @@ namespace drachtio {
     void notifyTerminateStaleDialog( std::shared_ptr<SipDialog> dlg, bool ackbye = false ) ;
     void timeoutBye( string transactionId ) ;
 
+    /* a 2xx to an INVITE we sent, from another branch than the one that made the dialog (forking) */
+    bool isForkedResponse( sip_t const* sip ) ;
+    void ackAndByeForkedResponse( sip_t const* sip ) ;
+    void forgetForkedBranch( string branch ) ;
+
     void notifyCancelTimeoutReachedIIP( std::shared_ptr<IIP> dlg ) ;
 
 		void logStorageCount(bool bDetail = false)  ;
@@ -237,6 +242,16 @@ namespace drachtio {
 		}
 		bool findDialogById( const std::string& dialogId, std::shared_ptr<SipDialog>& dlg ) {
 			return SD_FindByDialogId(m_dialogs, dialogId, dlg) ;
+		}
+
+		/// forked branches we ended, kept while their 2xx may be retransmitted
+		bool addForkedBranch( const string& branch ) {
+			std::lock_guard<std::mutex> lock(m_mutex) ;
+			return m_forkedBranches.insert( branch ).second ;
+		}
+		void removeForkedBranch( const string& branch ) {
+			std::lock_guard<std::mutex> lock(m_mutex) ;
+			m_forkedBranches.erase( branch ) ;
 		}
 
 		/// RIP helpers
@@ -291,6 +306,7 @@ namespace drachtio {
  
 		InvitesInProgress_t  	m_invitesInProgress;
 		StableDialogs_t				m_dialogs;
+		std::unordered_set<string>	m_forkedBranches;
 
 		// Requests sent by client
 

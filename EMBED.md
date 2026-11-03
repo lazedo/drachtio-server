@@ -54,3 +54,9 @@ These change drachtio-server for every client, embedded or not:
   request inside the dialog. It used to be routed as a new request while
   its server transaction was destroyed, so the caller got 500 and the
   client's answer could not be sent.
+- A 2xx to an INVITE we sent whose To tag differs from the 2xx that made the
+  dialog comes from another branch of a forking proxy. It used to be taken
+  for a retransmission (the first branch's ACK was sent again), so that
+  branch never got an ACK or a BYE. It now gets both (RFC 3261 13.2.2.4), the
+  BYE with `Reason: SIP ;cause=200 ;text="forked 2xx"`; a retransmission of
+  it is acknowledged again. The client keeps the dialog of the first 2xx.
