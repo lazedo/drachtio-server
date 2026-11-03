@@ -1020,7 +1020,9 @@ namespace drachtio {
                     SipDialog::we_are_refresher : 
                     SipDialog::they_are_refresher) ;
             }
-            else if (sip->sip_status->st_status > 200) {
+            else if (sip->sip_status->st_status > 200 ||
+                     (sip->sip_cseq->cs_method == sip_method_subscribe && sip->sip_status->st_status >= 200)) {
+                // a SUBSCRIBE gets no ACK: nothing else would clear it once its 200 arrived
                 IIP_Clear(m_invitesInProgress, iip);
             }
         }

@@ -60,3 +60,5 @@ These change drachtio-server for every client, embedded or not:
   branch never got an ACK or a BYE. It now gets both (RFC 3261 13.2.2.4), the
   BYE with `Reason: SIP ;cause=200 ;text="forked 2xx"`; a retransmission of
   it is acknowledged again. The client keeps the dialog of the first 2xx.
+- The invite-in-progress record of a SUBSCRIBE we sent is cleared on its 2xx,
+  as there is no ACK to clear it; it used to stay until a final NOTIFY.
