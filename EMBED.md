@@ -62,3 +62,9 @@ These change drachtio-server for every client, embedded or not:
   it is acknowledged again. The client keeps the dialog of the first 2xx.
 - The invite-in-progress record of a SUBSCRIBE we sent is cleared on its 2xx,
   as there is no ACK to clear it; it used to stay until a final NOTIFY.
+- A REFER we send outside a dialog makes a dialog, as a SUBSCRIBE does: it
+  carries a Contact, its transaction is kept in progress, and its 2xx (200 or
+  202) makes the dialog of its implicit subscription (RFC 3515), whose
+  NOTIFYs then reach the client. drachtio-server already did so for a REFER
+  it receives; one it sent had no Contact and no dialog, so the NOTIFYs went
+  nowhere.

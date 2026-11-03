@@ -671,7 +671,7 @@ namespace drachtio {
                 method, 
                 name.c_str()
                 ,URL_STRING_MAKE(requestUri.c_str())
-                ,TAG_IF( (method == sip_method_invite || method == sip_method_subscribe) && 
+                ,TAG_IF( (method == sip_method_invite || method == sip_method_subscribe || method == sip_method_refer) &&
                     !searchForHeader( tags, siptag_contact_str, contact ), SIPTAG_CONTACT_STR( contact.c_str() ) )
                 ,TAG_IF( body.length(), SIPTAG_PAYLOAD_STR(body.c_str()))
                 ,TAG_IF( contentType.length(), SIPTAG_CONTENT_TYPE_STR(contentType.c_str()))
@@ -691,7 +691,8 @@ namespace drachtio {
 
             STATS_COUNTER_INCREMENT(STATS_COUNTER_SIP_REQUESTS_OUT, {{"method", sip->sip_request->rq_method_name}})
 
-            if( method == sip_method_invite || method == sip_method_subscribe ) {
+            // a REFER outside a dialog makes one too, for its implicit subscription (RFC 3515)
+            if( method == sip_method_invite || method == sip_method_subscribe || method == sip_method_refer ) {
                 std::shared_ptr<SipDialog> dlg = std::make_shared<SipDialog>(pData->getTransactionId(), 
                     leg, orq, sip, m, desc) ;
                 string customContact ;
@@ -879,7 +880,8 @@ namespace drachtio {
 
         EncodeStackMessage( sip, encodedMessage ) ;
 
-        if( sip->sip_cseq->cs_method == sip_method_invite || sip->sip_cseq->cs_method == sip_method_subscribe ) {
+        if( sip->sip_cseq->cs_method == sip_method_invite || sip->sip_cseq->cs_method == sip_method_subscribe ||
+            sip->sip_cseq->cs_method == sip_method_refer ) {
             std:shared_ptr<IIP> iip;
 
             // a 2xx from another branch than the one that made the dialog (forking): it is no
@@ -936,7 +938,7 @@ namespace drachtio {
 
             if( (sip->sip_cseq->cs_method == sip_method_invite && 
                     (200 == sip->sip_status->st_status || (sip->sip_status->st_status > 100 && sip->sip_status->st_status < 200 && sip->sip_rseq))) || 
-                (sip->sip_cseq->cs_method == sip_method_subscribe && 
+                ((sip->sip_cseq->cs_method == sip_method_subscribe || sip->sip_cseq->cs_method == sip_method_refer) &&
                     (202 == sip->sip_status->st_status || 200 == sip->sip_status->st_status) ) )  {
 
                 DR_LOG(log_info) << "SipDialogController::processResponseOutsideDialog - adding dialog id: " << dlg->getDialogId()  ;
@@ -1021,8 +1023,9 @@ namespace drachtio {
                     SipDialog::they_are_refresher) ;
             }
             else if (sip->sip_status->st_status > 200 ||
-                     (sip->sip_cseq->cs_method == sip_method_subscribe && sip->sip_status->st_status >= 200)) {
-                // a SUBSCRIBE gets no ACK: nothing else would clear it once its 200 arrived
+                     ((sip->sip_cseq->cs_method == sip_method_subscribe || sip->sip_cseq->cs_method == sip_method_refer) &&
+                      sip->sip_status->st_status >= 200)) {
+                // a SUBSCRIBE or a REFER gets no ACK: nothing else would clear it once its 2xx arrived
                 IIP_Clear(m_invitesInProgress, iip);
             }
         }
