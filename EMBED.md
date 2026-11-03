@@ -48,3 +48,9 @@ These change drachtio-server for every client, embedded or not:
   pending requests, which drachtio-server answers with 500 when the dialog
   goes; the client answers it, and a timer cleans it up after 32 s if the
   client never does.
+- A request inside a dialog whose INVITE or SUBSCRIBE is still in progress
+  (a NOTIFY before the 2xx to a SUBSCRIBE, an INFO before the 2xx to an
+  INVITE) goes to the client that holds that initial transaction, as a
+  request inside the dialog. It used to be routed as a new request while
+  its server transaction was destroyed, so the caller got 500 and the
+  client's answer could not be sent.

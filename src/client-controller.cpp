@@ -373,8 +373,15 @@ namespace drachtio {
     }
 
     bool ClientController::route_request_inside_dialog( const string& rawSipMsg, const SipMsgData_t& meta, sip_t const *sip, 
-        const string& transactionId, const string& dialogId ) {
+        const string& transactionId, const string& dialogId, const string& dialogTransactionId ) {
         client_ptr client = this->findClientForDialog( dialogId );
+
+        // a dialog whose INVITE or SUBSCRIBE is still in progress is not mapped to a client yet:
+        // the client that holds that initial transaction holds the dialog
+        if (!client && !dialogTransactionId.empty()) {
+            client = this->findClientForNetTransaction( dialogTransactionId );
+            if (!client) client = this->findClientForAppTransaction( dialogTransactionId );
+        }
         string method_name = sip->sip_request->rq_method_name ;
         bool isBye = 0 == method_name.compare("BYE");
         bool isUpdate = 0 == method_name.compare("UPDATE");

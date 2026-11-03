@@ -1843,7 +1843,7 @@ namespace drachtio {
                 SipMsgData_t meta( msg, irq ) ;
                 msg_destroy( msg ); // release the reference
 
-                bool routed = m_pController->getClientController()->route_request_inside_dialog( encodedMessage, meta, sip, transactionId, dlg->getDialogId() ) ;
+                bool routed = m_pController->getClientController()->route_request_inside_dialog( encodedMessage, meta, sip, transactionId, dlg->getDialogId(), dlg->getTransactionId() ) ;
                 if (!routed && dlg->getSipStatus() < 200) {
                     // got a request before we sent a 200 OK to the initial INVITE, treat as an out-of-dialog request
                     switch (sip->sip_request->rq_method) {
