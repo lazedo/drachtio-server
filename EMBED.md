@@ -68,3 +68,10 @@ These change drachtio-server for every client, embedded or not:
   NOTIFYs then reach the client. drachtio-server already did so for a REFER
   it receives; one it sent had no Contact and no dialog, so the NOTIFYs went
   nowhere.
+- A reliable provisional response that ends without a PRACK no longer
+  crashes the server. sofia-sip calls the PRACK callback with no request
+  when it flushes such a response: when a final response is sent before the
+  PRACK (a 3xx-6xx, or a 2xx after a reliable response without SDP), or when
+  the PRACK never comes (64*T1, then sofia answers 503 itself). The callback
+  read that missing request (SIGSEGV); now it only forgets the response.
+  Reported upstream as drachtio/drachtio-server#508, fixed by #509.
