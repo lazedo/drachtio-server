@@ -116,6 +116,15 @@ namespace {
     void clone_destroy( su_root_t* root, drachtio::DrachtioController* pController ) {
         return ;
     }
+    /* work posted to the sofia thread (DrachtioController::runInSipThread) */
+    typedef std::function<void()> SipThreadWork ;
+    void runSipThreadWork( su_root_magic_t* p, su_msg_r msg, void* arg ) {
+        (**static_cast<SipThreadWork**>( arg ))() ;
+    }
+    /* runs when the message goes, delivered or not */
+    void freeSipThreadWork( void* arg ) {
+        delete *static_cast<SipThreadWork**>( arg ) ;
+    }
     void watchdogTimerHandler(su_root_magic_t *p, su_timer_t *timer, su_timer_arg_t *arg) {
         theOneAndOnlyController->processWatchdogTimer() ;
     }
@@ -332,6 +341,19 @@ namespace drachtio {
     void DrachtioController::setEmbedded( std::function<void()> onReady ) {
         s_bEmbedded = true ;
         s_onReady = onReady ;
+    }
+
+    bool DrachtioController::runInSipThread( std::function<void()> fn ) {
+        SipThreadWork* work = new SipThreadWork( std::move( fn ) ) ;
+        su_msg_r msg = SU_MSG_R_INIT ;
+        if( su_msg_create( msg, su_clone_task(m_clone), su_root_task(m_root), runSipThreadWork, sizeof work ) < 0 ) {
+            delete work ;
+            return false ;
+        }
+        *static_cast<SipThreadWork**>( su_msg_data( msg ) ) = work ;
+        su_msg_deinitializer( msg, freeSipThreadWork ) ;
+        /* a message that is not sent is destroyed, and the work with it */
+        return 0 == su_msg_send( msg ) ;
     }
 
     DrachtioController::DrachtioController( int argc, char* argv[] ) : m_bDaemonize(false), m_bLoggingInitialized(false),

@@ -20,6 +20,32 @@ arguments or configuration, opens no admin port (the `<admin>` element is still
 required in the configuration file), and does not register `su_deinit` with
 `atexit()`.
 
+## TLS certificates by server name
+
+A TLS or WSS listener presents its own certificate (`--tls-cert-file`), unless
+a client asks, in the server_name extension (SNI), for a name the host gave a
+certificate for. The host can give certificates beforehand, or be asked for
+one when a client asks for a name with none:
+
+- `drachtio_embed_tls_sni(cb, timeout_ms)` makes the server call `cb` with
+  such a name, on its SIP thread; `cb` must not block. The client's handshake
+  waits for the answer without blocking the server. With no answer in
+  `timeout_ms` (2000 by default), it goes on with the listener's certificate,
+  and the name is not asked for again for 30 s. It can be called before
+  `drachtio_embed_start()`.
+- `drachtio_embed_tls_certificate(name, pem, len)` answers with a
+  certificate, or gives one beforehand (`name` NULL). `pem` has the
+  certificate, any intermediate certificates and the private key. It serves
+  the DNS names of its subjectAltName, or its common name;
+  `*.example.com` serves the names one level below.
+- `drachtio_embed_tls_no_certificate(name)` answers that there is none: the
+  listener's certificate, without asking again for 30 s.
+- `drachtio_embed_tls_forget(name)` stops serving a name (NULL: every name).
+
+These need a sofia-sip with server name support (`TPORT_SNI_API` in
+`<sofia-sip/tport.h>`, as in 2600hz/sofia-sip from branch 2600hz-24); with
+another one they return -2.
+
 ## Building
 
 sofia-sip (LGPL) is linked as a shared library from `$(libdir)`. Its build in

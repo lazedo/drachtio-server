@@ -64,6 +64,48 @@ int drachtio_embed_start(int argc, char **argv,
    Returns 0, or -1 before DRACHTIO_EMBED_READY. Safe from any thread. */
 int drachtio_embed_send(const char *data, size_t len);
 
+/* TLS certificates chosen by server name (SNI). A TLS or WSS listener
+   presents its own certificate (--tls-cert-file), unless a client asks, in
+   the server_name extension, for a name the host gave a certificate for.
+   These calls are safe from any thread. They need a sofia-sip with server
+   name support (TPORT_SNI_API); without it they return -2. */
+#define DRACHTIO_EMBED_TLS 1
+
+/* asks the host for the certificate of a server name that has none; it runs
+   on drachtio-server's SIP thread and must not block. The client's handshake
+   waits for drachtio_embed_tls_certificate() or
+   drachtio_embed_tls_no_certificate() with that name, or for the timeout. */
+typedef void (*drachtio_embed_tls_sni_cb)(void *ctx, const char *name);
+
+/* Asks the host (cb, with the ctx of drachtio_embed_start()) for the
+   certificates of server names, waiting timeout_ms (0: 2000) for each
+   answer. With no answer in time, the handshake goes on with the listener's
+   certificate, and the name is not asked for again for 30 s. cb NULL stops
+   asking. Can be called before drachtio_embed_start(). Returns 0, -1 if the
+   server can no longer be reached, or -2. */
+int drachtio_embed_tls_sni(drachtio_embed_tls_sni_cb cb, unsigned timeout_ms);
+
+/* Serves a certificate for the server names it is for: the DNS names of its
+   subjectAltName, or its common name when it has none; "*.example.com"
+   serves the names one level below example.com. pem has the certificate,
+   then any intermediate certificates, and the private key, not encrypted
+   (it is copied). name, if not NULL, is the name it answers for: when the
+   certificate cannot be used, or is not for that name, the handshakes
+   waiting for the name go on with the listener's certificate. The result is
+   logged. Returns 0, -1 before DRACHTIO_EMBED_READY or without pem, or -2. */
+int drachtio_embed_tls_certificate(const char *name, const char *pem, size_t len);
+
+/* Answers that there is no certificate for a server name: its handshakes go
+   on with the listener's certificate, and it is not asked for again for 30 s.
+   Returns 0, -1 before DRACHTIO_EMBED_READY or without name, or -2. */
+int drachtio_embed_tls_no_certificate(const char *name);
+
+/* Stops serving a server name with a certificate of its own: the name as the
+   certificate has it ("*.example.com" for a wildcard), or NULL for every
+   name. Connections already up keep their certificate. Returns 0, -1 before
+   DRACHTIO_EMBED_READY, or -2. */
+int drachtio_embed_tls_forget(const char *name);
+
 #ifdef __cplusplus
 }
 #endif

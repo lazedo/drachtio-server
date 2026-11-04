@@ -132,6 +132,9 @@ namespace drachtio {
     std::shared_ptr<PendingRequestController> getPendingRequestController(void) { return m_pPendingRequestController ; }
     std::shared_ptr<SipProxyController> getProxyController(void) { return m_pProxyController ; }
     su_root_t* getRoot(void) { return m_root; }
+    // runs fn on the sofia thread, after the work posted to it before; safe
+    // from any thread while the sofia event loop runs
+    bool runInSipThread( std::function<void()> fn ) ;
     Blacklist* getBlacklist() { return m_pBlacklist; }
   
     enum severity_levels getCurrentLoglevel() { return m_current_severity_threshold; }
