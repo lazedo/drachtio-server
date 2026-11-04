@@ -30,6 +30,8 @@ THE SOFTWARE.
 #include <functional>
 #include <regex>
 #include <cstdlib>
+#include <cstdarg>
+#include <vector>
 
 #include <prometheus/exposer.h>
 #include <prometheus/registry.h>
@@ -118,15 +120,40 @@ namespace {
         theOneAndOnlyController->processWatchdogTimer() ;
     }
             
-	/* sofia logging is redirected to this function */
+	/* a SIP message sofia logged, now complete */
+	static void sofiasipMessageLogged(std::shared_ptr<drachtio::StackMsg>& msg, bool& sourceIsBlacklisted) {
+        if (!sourceIsBlacklisted) {
+            DR_LOG( drachtio::log_info ) << msg->getFirstLine()  << msg->getSipMessage() <<  " " ;
+
+            msg->isIncoming()
+            ? theOneAndOnlyController->setLastRecvStackMessage( msg )
+            : theOneAndOnlyController->setLastSentStackMessage( msg ) ;
+        }
+        sourceIsBlacklisted = false;
+    }
+
+	/* sofia logging is redirected to this function. A SIP message comes either
+	   one line per call, between two separators, or whole in one call after
+	   its first line and one separator (sofia-sip with FreeSWITCH's FS-11867) */
 	static void __sofiasip_logger_func(void *logarg, char const *fmt, va_list ap) {
         
         static bool loggingSipMsg = false ;
         static bool sourceIsBlacklisted = false;
         static std::shared_ptr<drachtio::StackMsg> msg ;
 
-        char output[MAXLOGLEN+1] ;
-        vsnprintf( output, MAXLOGLEN, fmt, ap ) ;
+        char line[MAXLOGLEN+1] ;
+        std::vector<char> whole ;
+        char* output = line ;
+        va_list again ;
+        va_copy( again, ap ) ;
+        int needed = vsnprintf( line, MAXLOGLEN, fmt, ap ) ;
+        if( needed >= MAXLOGLEN ) {
+            /* a whole message can be longer than a line */
+            whole.resize( needed + 1 ) ;
+            vsnprintf( whole.data(), whole.size(), fmt, again ) ;
+            output = whole.data() ;
+        }
+        va_end( again ) ;
         va_end(ap) ;
 
         if( loggingSipMsg ) {
@@ -135,20 +162,28 @@ namespace {
 
             if( !loggingSipMsg ) {
                 //DR_LOG(drachtio::log_debug) << "Completed logging sip message"  ;
-                if (!sourceIsBlacklisted) {
-                    DR_LOG( drachtio::log_info ) << msg->getFirstLine()  << msg->getSipMessage() <<  " " ;            
-
-                    msg->isIncoming() 
-                    ? theOneAndOnlyController->setLastRecvStackMessage( msg ) 
-                    : theOneAndOnlyController->setLastSentStackMessage( msg ) ;
-                }
-                sourceIsBlacklisted = false;
+                sofiasipMessageLogged( msg, sourceIsBlacklisted ) ;
             }
         }
         else if( ::strstr( output, "recv ") == output || ::strstr( output, "send ") == output ) {
             drachtio::Blacklist* pBlacklist;
-            loggingSipMsg = true ;
             //DR_LOG(drachtio::log_debug) << "started logging sip message: " << output  ;
+
+            /* the first line ends at the separator: with "   " before it the
+               lines follow in the next calls, without it the message follows */
+            char* szWholeMsg = NULL ;
+            char* szStartSeparator = strstr( output, "   " MSG_SEPARATOR ) ;
+            if( NULL != szStartSeparator ) {
+                *szStartSeparator = '\0' ;
+                loggingSipMsg = true ;
+            }
+            else if( NULL != (szStartSeparator = strstr( output, MSG_SEPARATOR )) ) {
+                szWholeMsg = szStartSeparator + strlen( MSG_SEPARATOR ) ;
+                *szStartSeparator = '\0' ;
+            }
+            else {
+                loggingSipMsg = true ;
+            }
 
             if ((pBlacklist = theOneAndOnlyController->getBlacklist())) {
                 std::string header(output);
@@ -163,10 +198,13 @@ namespace {
                 }
             }
 
-            char* szStartSeparator = strstr( output, "   " MSG_SEPARATOR ) ;
-            if( NULL != szStartSeparator ) *szStartSeparator = '\0' ;
-
             msg = std::make_shared<drachtio::StackMsg>( output ) ;
+
+            if( NULL != szWholeMsg ) {
+                msg->appendLine( szWholeMsg, false ) ;
+                msg->appendLine( szWholeMsg, true ) ;     /* complete: nothing more comes */
+                sofiasipMessageLogged( msg, sourceIsBlacklisted ) ;
+            }
         }
         else {
             int len = strlen(output) ;
